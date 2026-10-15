@@ -1,0 +1,191 @@
+<main class="page">
+  <nav class="topbar">
+    <a class="topbar__back" [routerLink]="['/live', slug()]" aria-label="Volver a los productos">←</a>
+    <h1 class="topbar__title">Datos de envío</h1>
+  </nav>
+
+  @if (!ready()) {
+    <div class="skeleton" style="height: 160px"></div>
+  } @else {
+    @if (outOfStockNotice().length) {
+      <p class="alert alert--danger" role="alert">
+        😔 Alguien se llevó las últimas unidades de <strong>{{ outOfStockNotice().join(', ') }}</strong>.
+        Ajustamos tu carrito con lo que queda disponible; revisa el resumen y confirma de nuevo.
+      </p>
+    }
+
+    @if (cart.units() === 0) {
+      <div class="empty">
+        <div class="empty__icon">🛍️</div>
+        <p>Tu carrito está vacío.</p>
+        <a class="btn btn--ghost" [routerLink]="['/live', slug()]">Ver productos</a>
+      </div>
+    } @else {
+      <section class="card summary">
+        <div class="row">
+          <h2 class="card__title">Tu pedido</h2>
+          <span class="spacer"></span>
+          <a class="small strong" [routerLink]="['/live', slug()]">Editar</a>
+        </div>
+        <ul class="summary__lines">
+          @for (line of cart.lines(); track line.item.variantId) {
+            <li>
+              <span class="summary__qty">{{ line.quantity }}×</span>
+              <span class="summary__name">{{ line.item.productName }} <span class="muted">· {{ line.item.variantName }}</span></span>
+              <span class="strong">{{ line.quantity * line.item.priceCop | cop }}</span>
+            </li>
+          }
+        </ul>
+        <div class="totals">
+          <div class="totals__row"><span>Subtotal</span><span>{{ cart.subtotal() | cop }}</span></div>
+          <div class="totals__row">
+            <span>Envío</span>
+            <span>{{ cart.shipping() === 0 ? 'Gratis 🎉' : (cart.shipping() | cop) }}</span>
+          </div>
+          <div class="totals__row totals__row--total"><span>Total</span><span>{{ cart.total() | cop }}</span></div>
+        </div>
+      </section>
+
+      <form id="checkout-form" class="stack" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <h2 class="section-label">¿Quién recibe?</h2>
+        <section class="card stack">
+          <label class="field">
+            <span class="field__label">Nombre completo</span>
+            <input class="input" formControlName="fullName" autocomplete="name" placeholder="Como aparece en tu documento" />
+            @if (showError('fullName')) {
+              <span class="field__error">Escribe tu nombre completo.</span>
+            }
+          </label>
+
+          <div class="field">
+            <span class="field__label" id="doc-label">Documento</span>
+            <div class="doc-row">
+              <select class="select" formControlName="documentType" aria-labelledby="doc-label">
+                @for (doc of documentTypes; track doc.value) {
+                  <option [value]="doc.value">{{ doc.label }}</option>
+                }
+              </select>
+              <input class="input" formControlName="documentNumber" inputmode="numeric" placeholder="Número" aria-labelledby="doc-label" />
+            </div>
+            @if (showError('documentNumber')) {
+              <span class="field__error">Escribe un número de documento válido.</span>
+            }
+            <span class="field__hint">La transportadora lo pide para entregar el paquete.</span>
+          </div>
+
+          <label class="field">
+            <span class="field__label">Celular (WhatsApp)</span>
+            <input class="input" formControlName="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="300 123 4567" />
+            @if (showError('phone')) {
+              <span class="field__error">Debe ser un celular colombiano de 10 dígitos que empiece por 3.</span>
+            }
+          </label>
+
+          <div class="grid-2">
+            <label class="field">
+              <span class="field__label">Correo <span class="muted small">(opcional)</span></span>
+              <input class="input" formControlName="email" type="email" inputmode="email" autocomplete="email" />
+              @if (showError('email')) {
+                <span class="field__error">Correo inválido.</span>
+              }
+            </label>
+            <label class="field">
+              <span class="field__label">Usuario TikTok <span class="muted small">(opcional)</span></span>
+              <input class="input" formControlName="tiktokUsername" placeholder="@tuusuario" autocapitalize="off" />
+            </label>
+          </div>
+        </section>
+
+        <h2 class="section-label">¿A dónde lo enviamos?</h2>
+        <section class="card stack">
+          <div class="grid-2">
+            <label class="field">
+              <span class="field__label">Departamento</span>
+              <select class="select" formControlName="departmentCode" autocomplete="address-level1">
+                <option value="" disabled>Selecciona</option>
+                @for (d of departments(); track d.code) {
+                  <option [value]="d.code">{{ d.name }}</option>
+                }
+              </select>
+              @if (showError('departmentCode')) {
+                <span class="field__error">Selecciona el departamento.</span>
+              }
+            </label>
+            <label class="field">
+              <span class="field__label">Ciudad / municipio</span>
+              <select class="select" formControlName="cityCode" autocomplete="address-level2">
+                <option value="" disabled>{{ loadingCities() ? 'Cargando…' : 'Selecciona' }}</option>
+                @for (c of cities(); track c.code) {
+                  <option [value]="c.code">{{ c.name }}</option>
+                }
+              </select>
+              @if (showError('cityCode')) {
+                <span class="field__error">Selecciona la ciudad.</span>
+              }
+            </label>
+          </div>
+
+          <label class="field">
+            <span class="field__label">Dirección</span>
+            <input class="input" formControlName="addressLine" autocomplete="street-address" placeholder="Ej: Calle 45 # 12-30 Apto 402" />
+            @if (showError('addressLine')) {
+              <span class="field__error">Escribe la dirección completa.</span>
+            }
+          </label>
+
+          <div class="grid-2">
+            <label class="field">
+              <span class="field__label">Barrio <span class="muted small">(opcional)</span></span>
+              <input class="input" formControlName="neighborhood" />
+            </label>
+            <label class="field">
+              <span class="field__label">Indicaciones <span class="muted small">(opcional)</span></span>
+              <input class="input" formControlName="additionalInfo" placeholder="Torre, conjunto, portería…" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span class="field__label">Nota para la tienda <span class="muted small">(opcional)</span></span>
+            <textarea class="textarea" formControlName="notes" rows="2" placeholder="¿Algo que debamos saber?"></textarea>
+          </label>
+        </section>
+
+        <section class="stack consent">
+          <label class="check">
+            <input type="checkbox" formControlName="remember" />
+            <span>Recordar mis datos en este celular para la próxima compra.</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" formControlName="acceptsDataPolicy" />
+            <span>
+              Autorizo el tratamiento de mis datos personales para gestionar y enviar mi pedido (Ley 1581 de 2012).
+            </span>
+          </label>
+          @if (showError('acceptsDataPolicy')) {
+            <span class="field__error">Necesitamos tu autorización para procesar el envío.</span>
+          }
+        </section>
+
+        @if (submitError()) {
+          <p class="alert alert--danger" role="alert">{{ submitError() }}</p>
+        }
+      </form>
+
+      <div class="bottom-bar">
+        <div class="bottom-bar__inner">
+          <div class="bottom-bar__summary">
+            <div class="small muted">Total a pagar</div>
+            <div class="bottom-bar__total">{{ cart.total() | cop }}</div>
+          </div>
+          <button type="submit" form="checkout-form" class="btn btn--primary" [disabled]="submitting()">
+            @if (submitting()) {
+              <span class="spinner"></span> Apartando…
+            } @else {
+              Confirmar pedido
+            }
+          </button>
+        </div>
+      </div>
+    }
+  }
+</main>

@@ -1,0 +1,106 @@
+<main class="page">
+  @if (loading() && !live()) {
+    <div class="stack" aria-busy="true">
+      <div class="skeleton" style="height: 92px"></div>
+      @for (i of [1, 2, 3, 4]; track i) {
+        <div class="skeleton" style="height: 96px"></div>
+      }
+    </div>
+  } @else if (error()) {
+    <div class="empty">
+      <div class="empty__icon">😕</div>
+      <p>{{ error() }}</p>
+      <button type="button" class="btn btn--ghost" (click)="load(slug())">Reintentar</button>
+    </div>
+  } @else if (live(); as live) {
+    <header class="hero">
+      <div class="row">
+        @if (live.status === 'LIVE') {
+          <span class="badge badge--live">EN VIVO</span>
+        } @else if (live.status === 'ENDED') {
+          <span class="badge badge--muted">Live finalizado</span>
+        }
+      </div>
+      <h1 class="hero__title">{{ live.title }}</h1>
+      <p class="hero__text">
+        Elige los productos que pediste en el Live. Te los apartamos
+        <strong>{{ live.reservationMinutes }} minutos</strong> mientras haces el pago.
+      </p>
+    </header>
+
+    @if (!live.checkoutOpen) {
+      <p class="alert alert--warn">Este Live ya no está recibiendo pedidos.</p>
+    }
+
+    @if (live.items.length > 6) {
+      <label class="search">
+        <span class="sr-only">Buscar producto</span>
+        <span class="search__icon" aria-hidden="true">🔍</span>
+        <input
+          class="input search__input"
+          type="search"
+          placeholder="Busca por producto o tono (ej: 05)"
+          [value]="search()"
+          (input)="search.set($any($event.target).value)"
+        />
+      </label>
+    }
+
+    <ul class="products">
+      @for (item of filtered(); track item.variantId) {
+        @let qty = cart.quantityOf(item.variantId);
+        @let stock = stockLabel(item);
+        <li class="product" [class.product--selected]="qty > 0" [class.product--out]="item.available === 0">
+          <app-product-thumb [src]="item.imageUrl" [name]="item.variantName" />
+
+          <div class="product__info">
+            <p class="product__brand">{{ item.brand ? item.brand + ' · ' : '' }}{{ item.productName }}</p>
+            <p class="product__name">{{ item.variantName }}</p>
+            <div class="product__price">
+              <span class="strong">{{ item.priceCop | cop }}</span>
+              @if (item.regularPriceCop > item.priceCop) {
+                <s class="muted small">{{ item.regularPriceCop | cop }}</s>
+              }
+            </div>
+            @if (stock) {
+              <span class="badge" [class]="'badge ' + stock.kind">{{ stock.text }}</span>
+            }
+          </div>
+
+          <div class="stepper" [class.stepper--active]="qty > 0">
+            @if (qty > 0) {
+              <button type="button" class="stepper__btn" (click)="change(item, -1)" [attr.aria-label]="'Quitar uno de ' + item.variantName">−</button>
+              <span class="stepper__qty" aria-live="polite">{{ qty }}</span>
+            }
+            <button
+              type="button"
+              class="stepper__btn stepper__btn--add"
+              (click)="change(item, 1)"
+              [disabled]="!live.checkoutOpen || item.available === 0"
+              [attr.aria-label]="'Agregar ' + item.variantName"
+            >
+              +
+            </button>
+          </div>
+        </li>
+      } @empty {
+        <li class="empty">No encontramos productos con "{{ search() }}".</li>
+      }
+    </ul>
+
+    @if (cart.units() > 0) {
+      <div class="bottom-bar">
+        <div class="bottom-bar__inner">
+          <div class="bottom-bar__summary">
+            <div class="small muted">{{ cart.units() }} {{ cart.units() === 1 ? 'producto' : 'productos' }}</div>
+            <div class="bottom-bar__total">{{ cart.subtotal() | cop }}</div>
+          </div>
+          <a class="btn btn--primary" [routerLink]="['/live', live.slug, 'datos']">Continuar →</a>
+        </div>
+        @if (cart.missingForFreeShipping(); as missing) {
+          <p class="free-ship">Te faltan <strong>{{ missing | cop }}</strong> para envío gratis 🚚</p>
+        }
+      </div>
+    }
+  }
+</main>

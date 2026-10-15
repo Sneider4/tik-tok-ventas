@@ -1,0 +1,134 @@
+<header class="adm-head">
+  <h1>Inventario</h1>
+</header>
+
+<div class="adm-toolbar">
+  <input class="input" type="search" placeholder="Buscar por SKU, producto o tono" [value]="search()" (input)="onSearch($any($event.target).value)" aria-label="Buscar en inventario" />
+  <button type="button" class="adm-tab" [class.adm-tab--active]="lowStock()" (click)="toggleLow()">⚠️ Solo stock bajo</button>
+  @if (result(); as r) {
+    <span class="small muted">{{ r.total }} variantes</span>
+  }
+</div>
+
+<p class="small muted legend">
+  <strong>Físico</strong>: unidades en bodega · <strong>Reservado</strong>: apartado por pedidos sin pagar o en revisión ·
+  <strong>Disponible</strong>: lo que se puede vender en el Live.
+</p>
+
+@if (loadError()) {
+  <div class="adm-empty">
+    <p>{{ loadError() }}</p>
+    <button type="button" class="btn btn--ghost btn--sm" (click)="load()">Reintentar</button>
+  </div>
+} @else if (result(); as r) {
+  @if (r.data.length === 0) {
+    <div class="adm-empty">No hay productos que coincidan.</div>
+  } @else {
+    <div class="adm-table-wrap">
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Producto</th>
+            <th class="num">Precio</th>
+            <th class="num">Físico</th>
+            <th class="num">Reservado</th>
+            <th class="num">Disponible</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of r.data; track row.variantId) {
+            <tr [class.inv-flash]="flashed().has(row.variantId)">
+              <td class="mono">{{ row.variant.sku }}</td>
+              <td>
+                <div class="strong">{{ row.variant.name }}</div>
+                <div class="small muted">{{ row.variant.product.brand ? row.variant.product.brand + ' · ' : '' }}{{ row.variant.product.name }}</div>
+              </td>
+              <td class="num">{{ row.variant.priceCop | cop }}</td>
+              <td class="num">{{ row.onHand }}</td>
+              <td class="num">{{ row.reserved }}</td>
+              <td class="num">
+                <span class="badge" [class]="'badge ' + (row.available === 0 ? 'badge--danger' : isLow(row) ? 'badge--warn' : 'badge--success')">
+                  {{ row.available }}
+                </span>
+              </td>
+              <td class="num">
+                <button type="button" class="btn btn--ghost btn--sm" (click)="openAdjust(row)">Ajustar</button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+} @else {
+  <div class="skeleton" style="height: 320px"></div>
+}
+
+<dialog class="adm-dialog" #adjustDialog (close)="editing.set(null)">
+  @if (editing(); as row) {
+    <form class="adm-dialog__body" (submit)="$event.preventDefault(); save()">
+      <div>
+        <h2>{{ row.variant.name }}</h2>
+        <p class="small muted" style="margin: 2px 0 0">{{ row.variant.product.name }} · <span class="mono">{{ row.variant.sku }}</span></p>
+      </div>
+
+      <div class="inv-now">
+        <div><span class="small muted">Físico</span><strong>{{ row.onHand }}</strong></div>
+        <div><span class="small muted">Reservado</span><strong>{{ row.reserved }}</strong></div>
+        <div><span class="small muted">Disponible</span><strong>{{ row.available }}</strong></div>
+      </div>
+
+      <div class="adm-tabs" style="margin: 0">
+        <button type="button" class="adm-tab" [class.adm-tab--active]="mode() === 'RESTOCK'" (click)="mode.set('RESTOCK')">📥 Entrada de mercancía</button>
+        <button type="button" class="adm-tab" [class.adm-tab--active]="mode() === 'ADJUSTMENT'" (click)="mode.set('ADJUSTMENT')">✏️ Ajuste (+/−)</button>
+      </div>
+
+      <div class="grid-2">
+        <label class="field">
+          <span class="field__label">{{ mode() === 'RESTOCK' ? 'Unidades que llegaron' : 'Cambio (usa − para restar)' }}</span>
+          <input class="input" type="number" inputmode="numeric" step="1" [min]="mode() === 'RESTOCK' ? 1 : null"
+            [value]="amount() ?? ''" (input)="amount.set($any($event.target).valueAsNumber || null)" autofocus />
+        </label>
+        <label class="field">
+          <span class="field__label">Alerta de stock bajo en</span>
+          <input class="input" type="number" min="0" step="1" [value]="threshold()" (input)="threshold.set($any($event.target).valueAsNumber || 0)" />
+        </label>
+      </div>
+      @if (delta() !== 0) {
+        <p class="small" style="margin: 0">Físico quedará en <strong>{{ row.onHand + delta() }}</strong> unidades.</p>
+        @if (row.onHand + delta() < row.reserved) {
+          <p class="alert alert--danger small" style="margin: 0">No puedes dejar menos unidades que las reservadas por clientes ({{ row.reserved }}).</p>
+        }
+      }
+      <label class="field">
+        <span class="field__label">Motivo <span class="muted small">(opcional)</span></span>
+        <input class="input" [value]="reason()" (input)="reason.set($any($event.target).value)" placeholder="Factura proveedor, conteo físico, producto dañado…" maxlength="300" />
+      </label>
+
+      <div class="adm-dialog__actions">
+        <button type="button" class="btn btn--outline" (click)="closeAdjust()">Cancelar</button>
+        <button type="submit" class="btn btn--primary" [disabled]="saving() || row.onHand + delta() < row.reserved">Guardar</button>
+      </div>
+
+      <details class="inv-moves">
+        <summary class="small strong">Últimos movimientos (kardex)</summary>
+        @if (movements(); as moves) {
+          <ul>
+            @for (m of moves; track m.id) {
+              <li class="small">
+                <span>{{ m.createdAt | date: 'd MMM h:mm a' }}</span>
+                <span class="strong">{{ movementLabel[m.type] }}</span>
+                <span class="mono">{{ m.deltaOnHand ? (m.deltaOnHand > 0 ? '+' : '') + m.deltaOnHand + ' fís.' : '' }} {{ m.deltaReserved ? (m.deltaReserved > 0 ? '+' : '') + m.deltaReserved + ' res.' : '' }}</span>
+                <span class="muted">{{ m.reason ?? m.adminUser?.fullName ?? '' }}</span>
+              </li>
+            } @empty {
+              <li class="small muted">Sin movimientos.</li>
+            }
+          </ul>
+        }
+      </details>
+    </form>
+  }
+</dialog>

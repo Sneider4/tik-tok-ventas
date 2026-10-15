@@ -1,0 +1,171 @@
+@if (loadError()) {
+  <div class="adm-empty">
+    <p>{{ loadError() }}</p>
+    <button type="button" class="btn btn--ghost btn--sm" (click)="load(id()!)">Reintentar</button>
+  </div>
+} @else if (isNew() || product()) {
+  <header class="adm-head">
+    <a class="topbar__back" routerLink="/admin/productos" aria-label="Volver a productos">←</a>
+    <h1>{{ isNew() ? 'Nuevo producto' : product()!.name }}</h1>
+    @if (!isNew()) {
+      <span class="badge" [class]="'badge ' + (product()!.active ? 'badge--success' : 'badge--muted')">{{ product()!.active ? 'Activo' : 'Inactivo' }}</span>
+    }
+  </header>
+
+  @if (errors().length) {
+    <div class="alert alert--danger pf-errors" role="alert">
+      <ul>
+        @for (e of errors(); track $index) {
+          <li>{{ e }}</li>
+        }
+      </ul>
+    </div>
+  }
+
+  <!-- ===== Datos del producto ===== -->
+  <section class="card pf-product">
+    <div class="pf-grid">
+      <label class="field">
+        <span class="field__label">Nombre del producto</span>
+        <input class="input" [value]="name()" (input)="onProductName($any($event.target).value)" placeholder="Ej: Labial Matte Larga Duración" maxlength="120" />
+      </label>
+      <label class="field">
+        <span class="field__label">Marca <span class="muted small">(opcional)</span></span>
+        <input class="input" [value]="brand()" (input)="brand.set($any($event.target).value)" maxlength="80" />
+      </label>
+    </div>
+    <label class="field">
+      <span class="field__label">Descripción <span class="muted small">(opcional)</span></span>
+      <textarea class="textarea" rows="2" [value]="description()" (input)="description.set($any($event.target).value)" maxlength="2000"></textarea>
+    </label>
+    <label class="field">
+      <span class="field__label">URL de la imagen <span class="muted small">(opcional)</span></span>
+      <input class="input" type="url" [value]="imageUrl()" (input)="imageUrl.set($any($event.target).value)" placeholder="https://…" />
+      <span class="field__hint">Si una variante no tiene foto propia, el checkout muestra esta.</span>
+    </label>
+    @if (!isNew()) {
+      <div class="row pf-product__footer">
+        <label class="check">
+          <input type="checkbox" [checked]="active()" (change)="active.set(!active())" />
+          <span>Producto activo (si lo desactivas, desaparece de todos los Lives)</span>
+        </label>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn--primary btn--sm" (click)="saveProduct()" [disabled]="!productDirty() || saving()">Guardar producto</button>
+      </div>
+    }
+  </section>
+
+  <!-- ===== Variantes existentes ===== -->
+  @if (!isNew()) {
+    <div class="adm-head pf-section-head">
+      <h2>Variantes <span class="muted">({{ editable().length }})</span></h2>
+      <a class="btn btn--outline btn--sm" routerLink="/admin/inventario">Ajustar stock en Inventario</a>
+    </div>
+    <div class="adm-table-wrap">
+      <table class="adm-table pf-table">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Nombre (tono / tamaño)</th>
+            <th>Precio</th>
+            <th>Peso (g)</th>
+            <th>Imagen</th>
+            <th class="num">Disp.</th>
+            <th>Activa</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (e of editable(); track e.variant.id) {
+            <tr [class.pf-row--off]="!e.active">
+              <td class="mono">{{ e.variant.sku }}</td>
+              <td><input class="input" [value]="e.name" (input)="updateEditable(e.variant.id, 'name', $any($event.target).value)" maxlength="120" /></td>
+              <td><input class="input pf-num" inputmode="numeric" [value]="e.price" (input)="updateEditable(e.variant.id, 'price', $any($event.target).value)" /></td>
+              <td><input class="input pf-num pf-num--sm" inputmode="numeric" [value]="e.weight" (input)="updateEditable(e.variant.id, 'weight', $any($event.target).value)" /></td>
+              <td><input class="input" type="url" [value]="e.imageUrl" placeholder="https://…" (input)="updateEditable(e.variant.id, 'imageUrl', $any($event.target).value)" /></td>
+              <td class="num">{{ (e.variant.inventory?.onHand ?? 0) - (e.variant.inventory?.reserved ?? 0) }}</td>
+              <td><input type="checkbox" [checked]="e.active" (change)="toggleVariant(e.variant.id)" [attr.aria-label]="'Variante activa: ' + e.variant.sku" /></td>
+              <td class="num">
+                <button type="button" class="btn btn--sm" [class]="variantDirty(e) ? 'btn btn--sm btn--primary' : 'btn btn--sm btn--outline'"
+                  (click)="saveVariant(e)" [disabled]="!variantDirty(e) || savingVariant() === e.variant.id">Guardar</button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- ===== Variantes nuevas ===== -->
+  <div class="adm-head pf-section-head">
+    <h2>{{ isNew() ? 'Variantes' : 'Agregar variantes' }}</h2>
+    <button type="button" class="btn btn--ghost btn--sm" (click)="addDraft()">+ Agregar tono / presentación</button>
+  </div>
+  @if (isNew()) {
+    <p class="small muted pf-hint">Cada tono o tamaño es una variante con su propio SKU, precio y stock. El SKU se sugiere solo; puedes editarlo.</p>
+  }
+
+  @if (drafts().length) {
+    <div class="pf-drafts">
+      @for (d of drafts(); track d.key; let i = $index) {
+        <div class="card pf-draft">
+          <div class="pf-draft__grid">
+            <label class="field pf-draft__name">
+              <span class="field__label">Nombre</span>
+              <input class="input" [value]="d.name" (input)="updateDraft(d.key, 'name', $any($event.target).value)" placeholder="Ej: Tono 05 Rojo Pasión" />
+            </label>
+            <label class="field">
+              <span class="field__label">SKU</span>
+              <input class="input mono" [value]="d.sku" (input)="updateDraft(d.key, 'sku', $any($event.target).value)" placeholder="LAB-MAT-05" autocapitalize="characters" />
+            </label>
+            <label class="field">
+              <span class="field__label">Precio (COP)</span>
+              <input class="input" inputmode="numeric" [value]="d.price" (input)="updateDraft(d.key, 'price', $any($event.target).value)" placeholder="32000" />
+              @if (+d.price.replace(/\D/g, '') > 0) {
+                <span class="field__hint">{{ +d.price.replace(/\D/g, '') | cop }}</span>
+              }
+            </label>
+            <label class="field">
+              <span class="field__label">Stock inicial</span>
+              <input class="input" inputmode="numeric" [value]="d.stock" (input)="updateDraft(d.key, 'stock', $any($event.target).value)" />
+            </label>
+            <label class="field">
+              <span class="field__label">Peso (g)</span>
+              <input class="input" inputmode="numeric" [value]="d.weight" (input)="updateDraft(d.key, 'weight', $any($event.target).value)" />
+            </label>
+            <label class="field">
+              <span class="field__label">Alerta stock bajo</span>
+              <input class="input" inputmode="numeric" [value]="d.threshold" (input)="updateDraft(d.key, 'threshold', $any($event.target).value)" />
+            </label>
+          </div>
+          <button type="button" class="pf-draft__remove" (click)="removeDraft(d.key)" [attr.aria-label]="'Quitar variante ' + (i + 1)">✕</button>
+        </div>
+      }
+    </div>
+  } @else if (!isNew()) {
+    <p class="small muted">¿Llegó un tono nuevo? Agrégalo aquí; nace con su propio inventario.</p>
+  }
+
+  @if (isNew()) {
+    <div class="pf-actions">
+      <a class="btn btn--outline" routerLink="/admin/productos">Cancelar</a>
+      <button type="button" class="btn btn--primary" (click)="saveNew()" [disabled]="saving()">
+        @if (saving()) {
+          <span class="spinner"></span>
+        }
+        Crear producto
+      </button>
+    </div>
+  } @else if (drafts().length) {
+    <div class="pf-actions">
+      <button type="button" class="btn btn--primary" (click)="saveDrafts()" [disabled]="saving()">
+        @if (saving()) {
+          <span class="spinner"></span>
+        }
+        Guardar {{ drafts().length }} variante(s) nueva(s)
+      </button>
+    </div>
+  }
+} @else {
+  <div class="skeleton" style="height: 300px"></div>
+}

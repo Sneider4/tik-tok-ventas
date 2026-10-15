@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+backend/storage/
+*.log
+.angular/
+coverage/
+*.tsbuildinfo

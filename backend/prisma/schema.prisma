@@ -1,0 +1,463 @@
+// =====================================================================
+//  OMS Live Commerce — Esquema de datos (PostgreSQL)
+//  Convenciones:
+//   - Dinero en COP como enteros (Int). El peso colombiano no usa centavos.
+//   - Tablas en snake_case (@@map), columnas en camelCase (se citan con "" en SQL crudo).
+//   - Las CHECK constraints de inventario viven en la migración SQL (Prisma no las modela).
+// =====================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------
+
+enum AdminRole {
+  OWNER
+  ADMIN
+  OPERATOR
+}
+
+enum LiveSessionStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+}
+
+enum DocumentType {
+  CC // Cédula de ciudadanía
+  CE // Cédula de extranjería
+  TI // Tarjeta de identidad
+  PP // Pasaporte
+  PPT // Permiso por protección temporal
+  NIT
+}
+
+/// Máquina de estados del pedido:
+/// PENDING_PAYMENT -> PAYMENT_REVIEW -> PAID -> LABEL_GENERATED -> SHIPPED -> DELIVERED
+///        |                 |            |
+///        v                 v            v
+///     EXPIRED          (rechazo:     CANCELLED
+///                   vuelve a PENDING_PAYMENT)
+enum OrderStatus {
+  PENDING_PAYMENT // Stock reservado, esperando comprobante
+  PAYMENT_REVIEW // Comprobante subido, esperando aprobación del admin
+  PAID // Pago aprobado: la reserva se convierte en venta
+  LABEL_GENERATED // Guía creada en el agregador logístico
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  EXPIRED // La reserva venció sin comprobante
+}
+
+enum PaymentMethod {
+  NEQUI
+  DAVIPLATA
+  BANK_TRANSFER
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum InventoryMovementType {
+  RESTOCK // Entrada de mercancía
+  ADJUSTMENT // Ajuste manual (conteo, daño, etc.)
+  RESERVE // Reserva por checkout
+  RELEASE // Liberación de reserva (expiró / rechazado / cancelado)
+  SALE // Reserva convertida en venta (pago aprobado)
+  RETURN // Devolución / cancelación de pedido pagado
+}
+
+enum ShippingProviderCode {
+  MOCK
+  MIPAQUETE
+  SKYDROPX
+}
+
+enum ShipmentStatus {
+  PENDING
+  LABEL_CREATED
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum ShipmentBatchStatus {
+  PROCESSING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+// ---------------------------------------------------------------------
+// Administración
+// ---------------------------------------------------------------------
+
+model AdminUser {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  role         AdminRole @default(OPERATOR)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  reviewedPayments   Payment[]
+  inventoryMovements InventoryMovement[]
+  statusChanges      OrderStatusHistory[]
+  shipmentBatches    ShipmentBatch[]
+
+  @@map("admin_users")
+}
+
+// ---------------------------------------------------------------------
+// Catálogo e inventario
+// ---------------------------------------------------------------------
+
+model Product {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  brand       String?
+  description String?
+  imageUrl    String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  variants ProductVariant[]
+
+  @@map("products")
+}
+
+/// Unidad vendible (SKU). Ej: "Labial Matte — Tono 05 Rojo Pasión".
+model ProductVariant {
+  id          String   @id @default(uuid()) @db.Uuid
+  productId   String   @db.Uuid
+  sku         String   @unique
+  name        String
+  priceCop    Int
+  weightGrams Int      @default(100)
+  imageUrl    String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  product    Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventory  InventoryItem?
+  liveItems  LiveSessionItem[]
+  orderItems OrderItem[]
+  movements  InventoryMovement[]
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+/// Fila "caliente" durante el Live. Disponible = onHand - reserved.
+/// Invariantes (CHECK en SQL): onHand >= 0, reserved >= 0, reserved <= onHand.
+model InventoryItem {
+  variantId         String   @id @db.Uuid
+  onHand            Int      @default(0)
+  reserved          Int      @default(0)
+  lowStockThreshold Int      @default(3)
+  updatedAt         DateTime @updatedAt
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@map("inventory_items")
+}
+
+/// Kardex: bitácora inmutable de cada cambio de inventario.
+model InventoryMovement {
+  id            String                @id @default(uuid()) @db.Uuid
+  variantId     String                @db.Uuid
+  type          InventoryMovementType
+  deltaOnHand   Int                   @default(0)
+  deltaReserved Int                   @default(0)
+  orderId       String?               @db.Uuid
+  adminUserId   String?               @db.Uuid
+  reason        String?
+  createdAt     DateTime              @default(now())
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  order     Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  adminUser AdminUser?     @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
+
+  @@index([variantId, createdAt])
+  @@index([orderId])
+  @@map("inventory_movements")
+}
+
+// ---------------------------------------------------------------------
+// Live sessions (cada "En Vivo" tiene su propio link de checkout)
+// ---------------------------------------------------------------------
+
+model LiveSession {
+  id                 String            @id @default(uuid()) @db.Uuid
+  slug               String            @unique // /live/:slug
+  title              String
+  status             LiveSessionStatus @default(SCHEDULED)
+  startsAt           DateTime?
+  endedAt            DateTime?
+  reservationMinutes Int               @default(30) // Tiempo para subir el comprobante
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  items  LiveSessionItem[]
+  orders Order[]
+
+  @@map("live_sessions")
+}
+
+/// Productos ofrecidos en un Live, con precio especial opcional.
+model LiveSessionItem {
+  id            String  @id @default(uuid()) @db.Uuid
+  liveSessionId String  @db.Uuid
+  variantId     String  @db.Uuid
+  livePriceCop  Int? // null => usa priceCop de la variante
+  maxPerOrder   Int     @default(5)
+  displayOrder  Int     @default(0)
+  active        Boolean @default(true)
+
+  liveSession LiveSession    @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+  variant     ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@unique([liveSessionId, variantId])
+  @@map("live_session_items")
+}
+
+// ---------------------------------------------------------------------
+// Geografía Colombia (códigos DANE — requeridos por las transportadoras)
+// ---------------------------------------------------------------------
+
+model Department {
+  code   String @id // DANE 2 dígitos, ej "05"
+  name   String
+  cities City[]
+
+  @@map("departments")
+}
+
+model City {
+  code           String @id // DANE 5 dígitos, ej "05001"
+  name           String
+  departmentCode String
+
+  department Department        @relation(fields: [departmentCode], references: [code])
+  addresses  CustomerAddress[]
+  orders     Order[]
+
+  @@index([departmentCode])
+  @@map("cities")
+}
+
+// ---------------------------------------------------------------------
+// Clientes
+// ---------------------------------------------------------------------
+
+model Customer {
+  id             String       @id @default(uuid()) @db.Uuid
+  fullName       String
+  documentType   DocumentType
+  documentNumber String
+  phone          String // 10 dígitos móvil colombiano, ej 3001234567
+  email          String?
+  tiktokUsername String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  addresses CustomerAddress[]
+  orders    Order[]
+
+  @@unique([documentType, documentNumber])
+  @@index([phone])
+  @@map("customers")
+}
+
+model CustomerAddress {
+  id             String   @id @default(uuid()) @db.Uuid
+  customerId     String   @db.Uuid
+  cityCode       String
+  addressLine    String
+  neighborhood   String?
+  additionalInfo String?
+  createdAt      DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  city     City     @relation(fields: [cityCode], references: [code])
+
+  @@index([customerId])
+  @@map("customer_addresses")
+}
+
+// ---------------------------------------------------------------------
+// Pedidos
+// ---------------------------------------------------------------------
+
+model Order {
+  id             String      @id @default(uuid()) @db.Uuid
+  number         Int         @unique @default(autoincrement()) // Se muestra como PED-000123
+  publicToken    String      @unique @default(uuid()) @db.Uuid // Link de seguimiento del cliente
+  idempotencyKey String?     @unique // Evita pedidos duplicados por doble clic / reintentos
+  status         OrderStatus @default(PENDING_PAYMENT)
+  customerId     String      @db.Uuid
+  liveSessionId  String?     @db.Uuid
+
+  subtotalCop Int
+  shippingCop Int @default(0)
+  discountCop Int @default(0)
+  totalCop    Int
+
+  reservedUntil DateTime?
+
+  // Snapshot de envío: el pedido no cambia si el cliente edita su dirección después.
+  shipFullName       String
+  shipPhone          String
+  shipCityCode       String
+  shipCityName       String
+  shipDepartmentName String
+  shipAddressLine    String
+  shipNeighborhood   String?
+  shipAdditionalInfo String?
+
+  customerNotes String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  paidAt        DateTime?
+  cancelledAt   DateTime?
+
+  customer    Customer             @relation(fields: [customerId], references: [id])
+  liveSession LiveSession?         @relation(fields: [liveSessionId], references: [id])
+  shipCity    City                 @relation(fields: [shipCityCode], references: [code])
+  items       OrderItem[]
+  payments    Payment[]
+  shipment    Shipment?
+  history     OrderStatusHistory[]
+  movements   InventoryMovement[]
+
+  @@index([status, createdAt])
+  @@index([status, reservedUntil])
+  @@index([customerId])
+  @@index([liveSessionId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String @id @default(uuid()) @db.Uuid
+  orderId      String @db.Uuid
+  variantId    String @db.Uuid
+  sku          String
+  productName  String
+  variantName  String
+  unitPriceCop Int
+  quantity     Int
+  lineTotalCop Int
+
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id          String       @id @default(uuid()) @db.Uuid
+  orderId     String       @db.Uuid
+  fromStatus  OrderStatus?
+  toStatus    OrderStatus
+  adminUserId String?      @db.Uuid
+  note        String?
+  createdAt   DateTime     @default(now())
+
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  adminUser AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+// ---------------------------------------------------------------------
+// Pagos (comprobantes Nequi / Daviplata / Transferencia)
+// ---------------------------------------------------------------------
+
+model Payment {
+  id              String        @id @default(uuid()) @db.Uuid
+  orderId         String        @db.Uuid
+  method          PaymentMethod
+  amountCop       Int
+  reference       String? // Número de comprobante que reporta el cliente
+  receiptPath     String // Ruta en el storage (local / S3)
+  receiptMimeType String
+  status          PaymentStatus @default(PENDING_REVIEW)
+  reviewedById    String?       @db.Uuid
+  reviewedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime      @default(now())
+
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reviewedBy AdminUser? @relation(fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([orderId])
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------
+// Envíos y guías
+// ---------------------------------------------------------------------
+
+model Shipment {
+  id                 String               @id @default(uuid()) @db.Uuid
+  orderId            String               @unique @db.Uuid
+  batchId            String?              @db.Uuid
+  provider           ShippingProviderCode
+  carrier            String? // Servientrega, Coordinadora, Interrapidísimo...
+  providerShipmentId String?
+  trackingNumber     String?
+  labelPath          String? // PDF 4x6" (100x150 mm) para impresora térmica
+  costCop            Int?
+  status             ShipmentStatus       @default(PENDING)
+  errorMessage       String?
+  rawResponse        Json? // Respuesta cruda del agregador (auditoría / soporte)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  order Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  batch ShipmentBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([batchId])
+  @@index([trackingNumber])
+  @@map("shipments")
+}
+
+model ShipmentBatch {
+  id              String               @id @default(uuid()) @db.Uuid
+  createdById     String               @db.Uuid
+  provider        ShippingProviderCode
+  status          ShipmentBatchStatus  @default(PROCESSING)
+  totalOrders     Int
+  succeeded       Int                  @default(0)
+  failed          Int                  @default(0)
+  mergedLabelPath String? // Un solo PDF con todas las guías para imprimir de corrido
+  createdAt       DateTime             @default(now())
+  completedAt     DateTime?
+
+  createdBy AdminUser  @relation(fields: [createdById], references: [id])
+  shipments Shipment[]
+
+  @@index([createdAt])
+  @@map("shipment_batches")
+}

@@ -1,0 +1,113 @@
+.adm-head .topbar__back {
+  flex: none;
+}
+
+.pf-errors {
+  margin-bottom: 14px;
+
+  ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+}
+
+.pf-product {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.pf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
+}
+
+.pf-product__footer {
+  flex-wrap: wrap;
+}
+
+.pf-section-head {
+  margin: 8px 0 10px;
+
+  h2 {
+    flex: 1;
+    font-size: 18px;
+    font-weight: 800;
+  }
+}
+
+.pf-hint {
+  margin: -4px 0 12px;
+}
+
+.pf-table {
+  .input {
+    min-height: 38px;
+    padding: 6px 10px;
+    min-width: 140px;
+  }
+
+  .pf-num {
+    min-width: 0;
+    width: 110px;
+  }
+
+  .pf-num--sm {
+    width: 80px;
+  }
+}
+
+.pf-row--off td {
+  background: #fbf8f9;
+}
+
+.pf-drafts {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.pf-draft {
+  position: relative;
+  padding-right: 44px;
+}
+
+.pf-draft__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 10px;
+
+  .input {
+    min-height: 42px;
+  }
+}
+
+.pf-draft__name {
+  grid-column: span 2;
+}
+
+@media (max-width: 480px) {
+  .pf-draft__name {
+    grid-column: auto;
+  }
+}
+
+.pf-draft__remove {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0;
+  background: #f4eef1;
+  cursor: pointer;
+}
+
+.pf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}

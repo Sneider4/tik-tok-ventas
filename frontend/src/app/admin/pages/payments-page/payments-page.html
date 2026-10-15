@@ -1,0 +1,134 @@
+<header class="adm-head">
+  <h1>Comprobantes</h1>
+  @if (newArrivals() > 0) {
+    <button type="button" class="btn btn--primary btn--sm" (click)="load()">
+      {{ newArrivals() }} nuevo{{ newArrivals() === 1 ? '' : 's' }} · Recargar
+    </button>
+  }
+</header>
+
+<div class="adm-tabs" role="tablist">
+  @for (tab of tabs; track tab.value) {
+    <button
+      type="button"
+      role="tab"
+      class="adm-tab"
+      [class.adm-tab--active]="status() === tab.value"
+      [attr.aria-selected]="status() === tab.value"
+      (click)="setStatus(tab.value)"
+    >
+      {{ tab.label }}
+      @if (status() === tab.value && result()) {
+        ({{ result()!.total }})
+      }
+    </button>
+  }
+</div>
+
+@if (loadError()) {
+  <div class="adm-empty">
+    <p>{{ loadError() }}</p>
+    <button type="button" class="btn btn--ghost btn--sm" (click)="load()">Reintentar</button>
+  </div>
+} @else if (!result()) {
+  <div class="skeleton" style="height: 240px"></div>
+} @else if (result()!.data.length === 0) {
+  <div class="adm-empty">
+    @if (status() === 'PENDING_REVIEW') {
+      🎉 No hay comprobantes pendientes. Los nuevos aparecen aquí al instante.
+    } @else {
+      No hay comprobantes en esta lista.
+    }
+  </div>
+} @else {
+  <div class="pay-list">
+    @for (p of result()!.data; track p.id) {
+      <article class="pay" [class.pay--busy]="busy() === p.id">
+        <app-receipt-view class="pay__receipt" [paymentId]="p.id" [mimeType]="p.receiptMimeType" />
+
+        <div class="pay__body">
+          <div class="row">
+            <span class="pay__code">{{ p.order.code }}</span>
+            <span class="badge badge--soft">{{ methodLabel[p.method] }}</span>
+            <span class="spacer"></span>
+            <span class="small muted">{{ p.createdAt | date: 'd MMM, h:mm a' }}</span>
+          </div>
+
+          <p class="pay__name">{{ p.order.shipFullName }} <span class="muted small">· {{ p.order.shipPhone }}</span></p>
+
+          <div class="pay__amount">
+            <span class="small muted">Total del pedido</span>
+            <span class="pay__total">{{ p.order.totalCop | cop }}</span>
+            @if (p.reference) {
+              <span class="small">Ref. <span class="mono">{{ p.reference }}</span></span>
+            }
+          </div>
+
+          <ul class="pay__items small">
+            @for (item of p.order.items; track $index) {
+              <li><strong>{{ item.quantity }}×</strong> {{ item.productName }} · {{ item.variantName }}</li>
+            }
+          </ul>
+
+          @if (p.status === 'PENDING_REVIEW') {
+            <p class="small muted pay__tip">Verifica en tu app de {{ methodLabel[p.method] }} que entró <strong>{{ p.order.totalCop | cop }}</strong> antes de aprobar.</p>
+            <div class="pay__actions">
+              <button type="button" class="btn btn--outline" (click)="openReject(p)" [disabled]="busy() === p.id">Rechazar</button>
+              <button type="button" class="btn btn--primary" (click)="approve(p)" [disabled]="busy() === p.id">
+                @if (busy() === p.id) {
+                  <span class="spinner"></span>
+                }
+                Aprobar pago
+              </button>
+            </div>
+          } @else {
+            <p class="small">
+              <span class="badge" [class]="'badge ' + statusLabel[p.status].badge">{{ statusLabel[p.status].label }}</span>
+              @if (p.reviewedBy) {
+                por {{ p.reviewedBy.fullName }}
+              }
+              @if (p.reviewedAt) {
+                · {{ p.reviewedAt | date: 'd MMM, h:mm a' }}
+              }
+            </p>
+            @if (p.rejectionReason) {
+              <p class="small muted">Motivo: {{ p.rejectionReason }}</p>
+            }
+          }
+        </div>
+      </article>
+    }
+  </div>
+
+  @if (result()!.total > result()!.pageSize) {
+    <div class="adm-pager">
+      <button type="button" class="btn btn--outline btn--sm" [disabled]="page() === 1" (click)="goTo(page() - 1)">← Anterior</button>
+      <span>Página {{ page() }}</span>
+      <button type="button" class="btn btn--outline btn--sm" [disabled]="page() * result()!.pageSize >= result()!.total" (click)="goTo(page() + 1)">Siguiente →</button>
+    </div>
+  }
+}
+
+<dialog class="adm-dialog" #rejectDialog (close)="rejecting.set(null)">
+  @if (rejecting(); as p) {
+    <form class="adm-dialog__body" method="dialog" (submit)="$event.preventDefault(); confirmReject()">
+      <h2>Rechazar comprobante de {{ p.order.code }}</h2>
+      <p class="small muted" style="margin: 0">
+        El cliente verá el motivo y tendrá 60 minutos para subir otro comprobante. Los productos siguen apartados.
+      </p>
+      <div class="adm-chips">
+        @for (reason of rejectReasons; track reason) {
+          <button type="button" class="adm-chip" (click)="rejectReason.set(reason)">{{ reason }}</button>
+        }
+      </div>
+      <label class="field">
+        <span class="field__label">Motivo</span>
+        <textarea class="textarea" rows="2" maxlength="300" [value]="rejectReason()" (input)="rejectReason.set($any($event.target).value)"></textarea>
+      </label>
+      <div class="adm-dialog__actions">
+        <button type="button" class="btn btn--outline" (click)="closeReject()">Cancelar</button>
+        <button type="submit" class="btn btn--primary" [disabled]="rejectReason().trim().length < 3">Rechazar</button>
+      </div>
+    </form>
+  }
+</dialog>

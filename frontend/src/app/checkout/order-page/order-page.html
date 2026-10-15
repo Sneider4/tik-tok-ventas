@@ -1,0 +1,220 @@
+<main class="page page--no-bar">
+  @if (error()) {
+    <div class="empty">
+      <div class="empty__icon">🔎</div>
+      <p>{{ error() }}</p>
+      <button type="button" class="btn btn--ghost" (click)="load(token())">Reintentar</button>
+    </div>
+  } @else if (!order()) {
+    <div class="stack" aria-busy="true">
+      <div class="skeleton" style="height: 70px"></div>
+      <div class="skeleton" style="height: 220px"></div>
+    </div>
+  } @else {
+    @let o = order()!;
+
+    <header class="head">
+      <div>
+        <p class="muted small">Pedido</p>
+        <h1 class="head__code">{{ o.code }}</h1>
+      </div>
+      <span class="spacer"></span>
+      <span class="small muted">{{ o.createdAt | date: 'd MMM, h:mm a' }}</span>
+    </header>
+
+    <!-- ============ Pendiente de pago ============ -->
+    @if (o.status === 'PENDING_PAYMENT') {
+      @if (o.lastPayment?.status === 'REJECTED') {
+        <p class="alert alert--danger" role="alert">
+          <strong>No pudimos validar tu comprobante.</strong>
+          @if (o.lastPayment?.rejectionReason) {
+            Motivo: {{ o.lastPayment?.rejectionReason }}.
+          }
+          Envíalo de nuevo, por favor.
+        </p>
+      }
+
+      <section class="card pay-hero">
+        <p class="muted small">Total a pagar</p>
+        <p class="pay-hero__total">{{ o.totalCop | cop }}</p>
+        @if (remainingMs() !== null) {
+          <p class="pay-hero__timer" [class.pay-hero__timer--urgent]="(remainingMs() ?? 0) < 5 * 60_000">
+            @if ((remainingMs() ?? 0) > 0) {
+              ⏳ Te apartamos los productos por <strong>{{ countdown() }}</strong> más
+            } @else {
+              ⌛ Tu reserva está por vencer: envía el comprobante ya
+            }
+          </p>
+        }
+      </section>
+
+      <h2 class="section-label">1. ¿Cómo vas a pagar?</h2>
+      <section class="card stack">
+        <div class="methods" role="radiogroup" aria-label="Medio de pago">
+          @for (m of methods; track m.value) {
+            <button
+              type="button"
+              class="method"
+              role="radio"
+              [attr.aria-checked]="method() === m.value"
+              [class.method--active]="method() === m.value"
+              (click)="method.set(m.value)"
+            >
+              <span class="method__icon" aria-hidden="true">{{ m.icon }}</span>
+              {{ m.label }}
+            </button>
+          }
+        </div>
+
+        @if (paymentAccount(); as account) {
+          <div class="account">
+            <div class="account__info">
+              <span class="small muted">{{ account.label }}</span>
+              <span class="account__value">{{ account.value }}</span>
+              @if (o.payment?.accountHolder) {
+                <span class="small muted">A nombre de {{ o.payment?.accountHolder }}</span>
+              }
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" (click)="copy(account.value, account.label)">Copiar</button>
+          </div>
+          <p class="small muted">
+            Transfiere exactamente <strong>{{ o.totalCop | cop }}</strong> y toma captura del comprobante.
+          </p>
+        } @else if (!method()) {
+          <p class="small muted">Elige un medio para ver los datos de pago.</p>
+        }
+      </section>
+
+      <h2 class="section-label">2. Sube tu comprobante</h2>
+      <section class="card stack">
+        @if (file(); as f) {
+          <div class="file">
+            @if (preview()) {
+              <img class="file__preview" [src]="preview()" alt="Vista previa del comprobante" />
+            } @else {
+              <span class="file__icon" aria-hidden="true">📄</span>
+            }
+            <div class="file__info">
+              <span class="strong small">{{ f.name }}</span>
+              <span class="small muted">{{ (f.size / 1024 / 1024).toFixed(2) }} MB</span>
+            </div>
+            <button type="button" class="btn btn--outline btn--sm" (click)="removeFile()" [disabled]="uploading()">Cambiar</button>
+          </div>
+        } @else {
+          <label class="dropzone">
+            <input type="file" class="sr-only" accept="image/*,application/pdf" (change)="onFile($event)" />
+            <span class="dropzone__icon" aria-hidden="true">📸</span>
+            <span class="strong">Toca para adjuntar la captura</span>
+            <span class="small muted">Foto, captura de pantalla o PDF · máx. 5 MB</span>
+          </label>
+        }
+
+        <label class="field">
+          <span class="field__label">Número de comprobante <span class="muted small">(opcional)</span></span>
+          <input
+            class="input"
+            [value]="reference()"
+            (input)="reference.set($any($event.target).value)"
+            placeholder="Ej: M1234567"
+            maxlength="60"
+            autocapitalize="characters"
+          />
+        </label>
+
+        @if (uploadError()) {
+          <p class="alert alert--danger" role="alert">{{ uploadError() }}</p>
+        }
+
+        <button type="button" class="btn btn--primary btn--block" (click)="upload()" [disabled]="uploading()">
+          @if (uploading()) {
+            <span class="spinner"></span> Enviando… {{ progress() }}%
+          } @else {
+            Enviar comprobante
+          }
+        </button>
+        @if (uploading()) {
+          <div class="progress" role="progressbar" [attr.aria-valuenow]="progress()" aria-valuemin="0" aria-valuemax="100">
+            <span [style.width.%]="progress()"></span>
+          </div>
+        }
+      </section>
+    }
+
+    <!-- ============ Estados finales negativos ============ -->
+    @if (o.status === 'EXPIRED') {
+      <p class="alert alert--warn">
+        <strong>La reserva venció.</strong> No recibimos el comprobante a tiempo y los productos se liberaron.
+        Si ya pagaste, escríbenos con tu número de pedido; si no, haz un nuevo pedido desde el link del Live.
+      </p>
+    }
+    @if (o.status === 'CANCELLED') {
+      <p class="alert alert--danger"><strong>Este pedido fue cancelado.</strong> Si tienes dudas, escríbenos con tu número de pedido.</p>
+    }
+
+    <!-- ============ Seguimiento ============ -->
+    @if (o.status !== 'PENDING_PAYMENT' && o.status !== 'EXPIRED' && o.status !== 'CANCELLED') {
+      @if (o.status === 'PAYMENT_REVIEW') {
+        <p class="alert alert--info">
+          ✅ <strong>Recibimos tu comprobante.</strong> Lo estamos verificando; esta página se actualiza sola.
+        </p>
+      }
+
+      <section class="card">
+        <h2 class="card__title">Estado de tu pedido</h2>
+        <ol class="timeline">
+          @for (step of steps(); track step.label) {
+            <li class="timeline__step" [class]="'timeline__step timeline__step--' + step.state">
+              <span class="timeline__dot" aria-hidden="true">{{ step.state === 'done' ? '✓' : '' }}</span>
+              <div>
+                <p class="timeline__label">{{ step.label }}</p>
+                @if (step.state === 'current') {
+                  <p class="small muted">{{ step.hint }}</p>
+                }
+              </div>
+            </li>
+          }
+        </ol>
+
+        @if (o.shipment?.trackingNumber) {
+          <div class="account tracking">
+            <div class="account__info">
+              <span class="small muted">{{ o.shipment?.carrier }} · Número de guía</span>
+              <span class="account__value">{{ o.shipment?.trackingNumber }}</span>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" (click)="copy(o.shipment!.trackingNumber!, 'Número de guía')">Copiar</button>
+          </div>
+        }
+      </section>
+    }
+
+    <!-- ============ Detalle ============ -->
+    <h2 class="section-label">Detalle</h2>
+    <section class="card stack">
+      <ul class="lines">
+        @for (item of o.items; track $index) {
+          <li>
+            <span class="lines__qty">{{ item.quantity }}×</span>
+            <span>{{ item.productName }} <span class="muted">· {{ item.variantName }}</span></span>
+            <span class="strong">{{ item.lineTotalCop | cop }}</span>
+          </li>
+        }
+      </ul>
+      <div class="totals">
+        <div class="totals__row"><span>Subtotal</span><span>{{ o.subtotalCop | cop }}</span></div>
+        <div class="totals__row"><span>Envío</span><span>{{ o.shippingCop === 0 ? 'Gratis' : (o.shippingCop | cop) }}</span></div>
+        <div class="totals__row totals__row--total"><span>Total</span><span>{{ o.totalCop | cop }}</span></div>
+      </div>
+      <div class="address">
+        <span class="small muted">Se envía a</span>
+        <span class="strong">{{ o.shipping.fullName }}</span>
+        <span>{{ o.shipping.addressLine }}</span>
+        <span>{{ o.shipping.city }}</span>
+      </div>
+    </section>
+
+    <section class="save-link">
+      <p class="small muted">Guarda este link para consultar tu pedido cuando quieras.</p>
+      <button type="button" class="btn btn--outline btn--sm" (click)="copyLink()">🔗 Copiar link del pedido</button>
+    </section>
+  }
+</main>

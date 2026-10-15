@@ -1,0 +1,120 @@
+<header class="adm-head">
+  <h1>Pedidos</h1>
+  @if (stale()) {
+    <button type="button" class="btn btn--primary btn--sm" (click)="load()">Hay cambios · Recargar</button>
+  }
+</header>
+
+<div class="adm-tabs" role="tablist">
+  @for (t of tabs; track t.key) {
+    <button type="button" role="tab" class="adm-tab" [class.adm-tab--active]="tabKey() === t.key" [attr.aria-selected]="tabKey() === t.key" (click)="selectTab(t.key)">
+      {{ t.label }}
+    </button>
+  }
+</div>
+
+<div class="adm-toolbar">
+  <input
+    class="input"
+    type="search"
+    placeholder="Buscar: PED-000123, nombre, celular, cédula, @tiktok, guía"
+    [value]="search()"
+    (input)="onSearch($any($event.target).value)"
+    aria-label="Buscar pedidos"
+  />
+  @if (result(); as r) {
+    <span class="small muted">{{ r.total }} pedido{{ r.total === 1 ? '' : 's' }}</span>
+  }
+  @if (loading()) {
+    <span class="spinner" style="color: var(--brand)"></span>
+  }
+</div>
+
+@if (result(); as r) {
+  @if (r.data.length === 0) {
+    <div class="adm-empty">No hay pedidos en esta vista.</div>
+  } @else {
+    <div class="adm-table-wrap">
+      <table class="adm-table">
+        <thead>
+          <tr>
+            @if (tab().bulk) {
+              <th><input type="checkbox" [checked]="allSelected()" (change)="toggleAll()" aria-label="Seleccionar todos" /></th>
+            }
+            <th>Pedido</th>
+            <th>Cliente</th>
+            <th>Ciudad</th>
+            <th class="num">Uds.</th>
+            <th class="num">Total</th>
+            <th>Estado</th>
+            <th>Guía</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (o of r.data; track o.id) {
+            <tr class="adm-row--click" (click)="openOrderId.set(o.id)">
+              @if (tab().bulk) {
+                <td (click)="toggle(o.id, $event)">
+                  <input type="checkbox" [checked]="selected().has(o.id)" [attr.aria-label]="'Seleccionar ' + o.code" />
+                </td>
+              }
+              <td>
+                <div class="strong">{{ o.code }}</div>
+                <div class="small muted">{{ o.createdAt | date: 'd MMM, h:mm a' }}</div>
+              </td>
+              <td>
+                <div>{{ o.shipFullName }}</div>
+                <div class="small muted">{{ o.shipPhone }}</div>
+              </td>
+              <td>{{ o.shipCityName }}</td>
+              <td class="num">{{ o.units }}</td>
+              <td class="num strong">{{ o.totalCop | cop }}</td>
+              <td>
+                <span class="badge" [class]="'badge ' + statusLabel[o.status].badge">{{ statusLabel[o.status].label }}</span>
+                @if (o.lastPayment && o.status === 'PAYMENT_REVIEW') {
+                  <div class="small muted">{{ methodLabel[o.lastPayment.method] }}</div>
+                }
+              </td>
+              <td>
+                @if (o.shipment?.trackingNumber) {
+                  <span class="mono">{{ o.shipment?.trackingNumber }}</span>
+                } @else if (o.shipment?.status === 'FAILED') {
+                  <span class="badge badge--danger">Falló</span>
+                } @else {
+                  <span class="muted">—</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    @if (r.total > r.pageSize) {
+      <div class="adm-pager">
+        <button type="button" class="btn btn--outline btn--sm" [disabled]="page() === 1" (click)="goTo(page() - 1)">← Anterior</button>
+        <span>Página {{ page() }} de {{ pages() }}</span>
+        <button type="button" class="btn btn--outline btn--sm" [disabled]="page() * r.pageSize >= r.total" (click)="goTo(page() + 1)">Siguiente →</button>
+      </div>
+    }
+  }
+} @else {
+  <div class="skeleton" style="height: 320px"></div>
+}
+
+@if (tab().bulk && selected().size > 0) {
+  <div class="adm-selectionbar">
+    <span>{{ selected().size }} seleccionado{{ selected().size === 1 ? '' : 's' }}</span>
+    <button type="button" class="btn btn--outline btn--sm" (click)="clearSelection()">Quitar selección</button>
+    <button type="button" class="btn btn--primary btn--sm" (click)="runBulk()" [disabled]="working()">
+      @if (working()) {
+        <span class="spinner"></span>
+      }
+      {{ tab().bulk!.label }} ({{ selected().size }})
+    </button>
+  </div>
+}
+
+@if (openOrderId(); as id) {
+  <app-order-drawer [orderId]="id" (closed)="openOrderId.set(null)" (changed)="onDrawerChanged()" />
+}

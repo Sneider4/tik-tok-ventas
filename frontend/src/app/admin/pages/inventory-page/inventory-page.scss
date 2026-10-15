@@ -1,0 +1,55 @@
+.legend {
+  margin: -4px 0 12px;
+}
+
+.inv-flash td {
+  animation: inv-flash 1.2s ease-out;
+}
+
+@keyframes inv-flash {
+  from {
+    background: #fde68a;
+  }
+}
+
+.inv-now {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+
+  div {
+    display: grid;
+    gap: 2px;
+    padding: 10px;
+    border-radius: 10px;
+    background: #faf6f8;
+    text-align: center;
+  }
+
+  strong {
+    font-size: 22px;
+  }
+}
+
+.inv-moves {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+
+  summary {
+    cursor: pointer;
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 0;
+    display: grid;
+    gap: 6px;
+  }
+
+  li {
+    display: grid;
+    grid-template-columns: 110px 80px 110px 1fr;
+    gap: 6px;
+  }
+}

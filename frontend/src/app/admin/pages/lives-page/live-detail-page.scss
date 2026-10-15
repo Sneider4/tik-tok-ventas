@@ -1,0 +1,173 @@
+.adm-head .topbar__back {
+  flex: none;
+}
+
+.ld-top {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+
+  .card {
+    display: grid;
+    gap: 10px;
+    align-content: start;
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.ld-status--live {
+  border-color: var(--live);
+  background: #fff6f6;
+}
+
+.ld-link__url {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #faf6f8;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+}
+
+.ld-items-head {
+  margin-bottom: 4px;
+
+  h2 {
+    flex: 1;
+    font-size: 18px;
+    font-weight: 800;
+  }
+}
+
+.ld-hint {
+  margin: 0 0 12px;
+}
+
+.ld-row--saving {
+  opacity: 0.55;
+}
+
+.ld-row--hidden td {
+  background: #fbf8f9;
+  color: var(--muted);
+}
+
+.ld-order {
+  display: grid;
+  gap: 2px;
+
+  button {
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 6px;
+    font-size: 10px;
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+}
+
+.ld-price {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .input {
+    width: 110px;
+    min-height: 38px;
+    padding: 6px 10px;
+  }
+}
+
+.ld-max {
+  width: 76px;
+  min-height: 38px !important;
+  padding: 6px 10px !important;
+}
+
+.ld-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 24px;
+  cursor: pointer;
+
+  input {
+    position: absolute;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  span {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #e5d9df;
+    transition: background 0.15s ease;
+    pointer-events: none;
+  }
+
+  span::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: transform 0.15s ease;
+  }
+
+  input:checked + span {
+    background: var(--success);
+  }
+
+  input:checked + span::after {
+    transform: translateX(16px);
+  }
+
+  input:focus-visible + span {
+    box-shadow: 0 0 0 3px rgba(225, 29, 116, 0.25);
+  }
+}
+
+.ld-picker {
+  width: min(640px, calc(100vw - 24px));
+}
+
+.ld-picker__list {
+  max-height: min(55dvh, 460px);
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.ld-picker__product {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ld-picker__variant {
+  align-items: center;
+  padding: 6px 4px;
+  border-radius: 8px;
+
+  &:hover {
+    background: #fffafc;
+  }
+}

@@ -1,0 +1,82 @@
+.pay-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
+  gap: 14px;
+}
+
+.pay {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  transition: opacity 0.15s ease;
+}
+
+@media (min-width: 560px) {
+  .pay {
+    grid-template-columns: 200px 1fr;
+  }
+}
+
+.pay--busy {
+  opacity: 0.6;
+}
+
+.pay__receipt {
+  min-height: 200px;
+}
+
+.pay__body {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+
+  p {
+    margin: 0;
+  }
+}
+
+.pay__code {
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.pay__name {
+  font-weight: 600;
+}
+
+.pay__amount {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #faf6f8;
+}
+
+.pay__total {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.pay__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.pay__tip {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px !important;
+}
+
+.pay__actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 8px;
+}

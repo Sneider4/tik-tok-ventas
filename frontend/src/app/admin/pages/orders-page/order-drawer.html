@@ -1,0 +1,151 @@
+<div class="adm-drawer-scrim" (click)="close()"></div>
+<aside class="adm-drawer" role="dialog" aria-label="Detalle del pedido">
+  @if (order(); as o) {
+    <header class="dr-head">
+      <div>
+        <h2>{{ o.code }}</h2>
+        <p class="small muted">{{ o.createdAt | date: "d MMM y, h:mm a" }} · {{ o.liveSession?.title ?? 'Sin Live' }}</p>
+      </div>
+      <span class="badge" [class]="'badge ' + statusLabel[o.status].badge">{{ statusLabel[o.status].label }}</span>
+      <button type="button" class="dr-close" (click)="close()" aria-label="Cerrar">✕</button>
+    </header>
+
+    <div class="dr-body">
+      <!-- Acciones según estado -->
+      <div class="dr-actions">
+        @if (o.status === 'PAYMENT_REVIEW') {
+          <a class="btn btn--primary btn--sm" routerLink="/admin/pagos">Revisar comprobante</a>
+        }
+        @if (o.status === 'PAID') {
+          <button type="button" class="btn btn--primary btn--sm" (click)="generateLabel()" [disabled]="working()">Generar guía</button>
+        }
+        @if (o.shipment?.labelPath && o.shipment?.status !== 'CANCELLED') {
+          <button type="button" class="btn btn--ghost btn--sm" (click)="downloadLabel(o.shipment!.id, o.code)">🖨️ Imprimir guía</button>
+        }
+        <a class="btn btn--outline btn--sm" [href]="whatsapp(o)" target="_blank" rel="noopener">WhatsApp</a>
+        @if (canCancel(o)) {
+          <button type="button" class="btn btn--outline btn--sm dr-danger" (click)="confirmingCancel.set(true)">Cancelar pedido</button>
+        }
+      </div>
+
+      @if (confirmingCancel()) {
+        <div class="alert alert--danger dr-confirm">
+          <p class="strong">¿Cancelar {{ o.code }}?</p>
+          <p class="small">
+            @if (o.status === 'PAID') {
+              Las unidades vuelven al inventario. El reembolso al cliente debes hacerlo por fuera.
+            } @else {
+              Se liberan los productos apartados.
+            }
+          </p>
+          <input class="input" placeholder="Motivo (opcional)" [value]="cancelReason()" (input)="cancelReason.set($any($event.target).value)" />
+          <div class="row">
+            <button type="button" class="btn btn--outline btn--sm" (click)="confirmingCancel.set(false)">No</button>
+            <button type="button" class="btn btn--primary btn--sm" (click)="cancel()" [disabled]="working()">Sí, cancelar</button>
+          </div>
+        </div>
+      }
+
+      <section class="dr-section">
+        <h3>Cliente</h3>
+        <p class="strong">{{ o.customer.fullName }}</p>
+        <p class="small">{{ o.customer.documentType }} {{ o.customer.documentNumber }} · {{ o.customer.phone }}</p>
+        @if (o.customer.email) {
+          <p class="small">{{ o.customer.email }}</p>
+        }
+        @if (o.customer.tiktokUsername) {
+          <p class="small">TikTok: &#64;{{ o.customer.tiktokUsername }}</p>
+        }
+      </section>
+
+      <section class="dr-section">
+        <h3>Envío</h3>
+        <p class="strong">{{ o.shipFullName }} · {{ o.shipPhone }}</p>
+        <p>{{ o.shipAddressLine }}</p>
+        @if (o.shipNeighborhood) {
+          <p class="small">Barrio {{ o.shipNeighborhood }}</p>
+        }
+        @if (o.shipAdditionalInfo) {
+          <p class="small">{{ o.shipAdditionalInfo }}</p>
+        }
+        <p class="strong">{{ o.shipCityName }}, {{ o.shipDepartmentName }}</p>
+        @if (o.customerNotes) {
+          <p class="alert alert--info small">📝 {{ o.customerNotes }}</p>
+        }
+      </section>
+
+      <section class="dr-section">
+        <h3>Productos</h3>
+        <ul class="dr-items">
+          @for (item of o.items; track item.id) {
+            <li>
+              <span class="strong">{{ item.quantity }}×</span>
+              <span>{{ item.productName }} · {{ item.variantName }} <span class="mono muted">{{ item.sku }}</span></span>
+              <span class="num">{{ item.lineTotalCop | cop }}</span>
+            </li>
+          }
+        </ul>
+        <div class="totals">
+          <div class="totals__row"><span>Subtotal</span><span>{{ o.subtotalCop | cop }}</span></div>
+          <div class="totals__row"><span>Envío</span><span>{{ o.shippingCop | cop }}</span></div>
+          <div class="totals__row totals__row--total"><span>Total</span><span>{{ o.totalCop | cop }}</span></div>
+        </div>
+      </section>
+
+      @if (o.payments.length) {
+        <section class="dr-section">
+          <h3>Pagos</h3>
+          @for (p of o.payments; track p.id) {
+            <div class="dr-payment">
+              <app-receipt-view [paymentId]="p.id" [mimeType]="p.receiptMimeType" />
+              <div>
+                <p><span class="badge" [class]="'badge ' + paymentStatus[p.status].badge">{{ paymentStatus[p.status].label }}</span></p>
+                <p class="small">{{ methodLabel[p.method] }} · {{ p.amountCop | cop }}</p>
+                @if (p.reference) {
+                  <p class="small">Ref. <span class="mono">{{ p.reference }}</span></p>
+                }
+                <p class="small muted">{{ p.createdAt | date: 'd MMM, h:mm a' }}</p>
+                @if (p.rejectionReason) {
+                  <p class="small">Motivo: {{ p.rejectionReason }}</p>
+                }
+              </div>
+            </div>
+          }
+        </section>
+      }
+
+      @if (o.shipment; as s) {
+        <section class="dr-section">
+          <h3>Guía</h3>
+          <p>
+            <span class="badge" [class]="'badge ' + (shipmentStatus[s.status]?.badge ?? 'badge--muted')">{{ shipmentStatus[s.status]?.label ?? s.status }}</span>
+            {{ s.carrier }}
+            @if (s.trackingNumber) {
+              · <span class="mono">{{ s.trackingNumber }}</span>
+            }
+          </p>
+          @if (s.errorMessage) {
+            <p class="alert alert--danger small">{{ s.errorMessage }}</p>
+          }
+        </section>
+      }
+
+      <section class="dr-section">
+        <h3>Historial</h3>
+        <ol class="dr-history">
+          @for (h of o.history; track h.id) {
+            <li>
+              <span class="strong small">{{ statusLabel[h.toStatus].label }}</span>
+              <span class="small muted">{{ h.createdAt | date: 'd MMM, h:mm:ss a' }}{{ h.adminUser ? ' · ' + h.adminUser.fullName : '' }}</span>
+              @if (h.note) {
+                <span class="small">{{ h.note }}</span>
+              }
+            </li>
+          }
+        </ol>
+      </section>
+    </div>
+  } @else {
+    <div class="dr-body"><div class="skeleton" style="height: 300px"></div></div>
+  }
+</aside>

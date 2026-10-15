@@ -1,0 +1,44 @@
+<div class="adm" [class.adm--menu-open]="menuOpen()">
+  <aside class="adm-side">
+    <div class="adm-side__brand">
+      <span class="adm-side__logo" aria-hidden="true">💄</span>
+      <span>Panel Live</span>
+    </div>
+    <nav class="adm-side__nav" (click)="menuOpen.set(false)">
+      @for (item of nav; track item.path) {
+        <a
+          class="adm-side__link"
+          [routerLink]="item.path"
+          routerLinkActive="adm-side__link--active"
+          [routerLinkActiveOptions]="{ exact: item.exact }"
+        >
+          <span aria-hidden="true">{{ item.icon }}</span>
+          <span class="adm-side__label">{{ item.label }}</span>
+          @if (item.badge && pendingPayments() > 0) {
+            <span class="adm-side__count">{{ pendingPayments() }}</span>
+          }
+        </a>
+      }
+    </nav>
+    <div class="adm-side__user">
+      <div>
+        <p class="strong small">{{ auth.admin()?.fullName }}</p>
+        <p class="muted small">{{ auth.admin()?.email }}</p>
+      </div>
+      <button type="button" class="btn btn--outline btn--sm" (click)="auth.logout()">Salir</button>
+    </div>
+  </aside>
+
+  <header class="adm-mobilebar">
+    <button type="button" class="adm-mobilebar__toggle" (click)="menuOpen.set(!menuOpen())" aria-label="Menú">☰</button>
+    <span class="strong">Panel Live</span>
+    @if (pendingPayments() > 0) {
+      <a class="adm-side__count" routerLink="/admin/pagos" aria-label="Comprobantes pendientes">{{ pendingPayments() }}</a>
+    }
+  </header>
+  <div class="adm-scrim" (click)="menuOpen.set(false)"></div>
+
+  <main class="adm-main">
+    <router-outlet />
+  </main>
+</div>

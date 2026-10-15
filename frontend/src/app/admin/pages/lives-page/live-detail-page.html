@@ -1,0 +1,204 @@
+@if (loadError()) {
+  <div class="adm-empty">
+    <p>{{ loadError() }}</p>
+    <button type="button" class="btn btn--ghost btn--sm" (click)="load(id())">Reintentar</button>
+  </div>
+} @else if (live(); as l) {
+  <header class="adm-head">
+    <a class="topbar__back" routerLink="/admin/lives" aria-label="Volver a Lives">←</a>
+    <h1>{{ l.title }}</h1>
+    <span class="badge" [class]="'badge ' + statusLabel[l.status].badge">{{ statusLabel[l.status].label }}</span>
+  </header>
+
+  <div class="ld-top">
+    <!-- Estado -->
+    <section class="card ld-status" [class.ld-status--live]="l.status === 'LIVE'">
+      @switch (l.status) {
+        @case ('SCHEDULED') {
+          <p class="strong">El link todavía no recibe pedidos.</p>
+          <p class="small muted">Inícialo justo cuando empieces a transmitir.</p>
+          <button type="button" class="btn btn--primary" (click)="setStatus('LIVE')" [disabled]="changingStatus()">🔴 Iniciar Live</button>
+        }
+        @case ('LIVE') {
+          <p class="strong">🔴 Estás EN VIVO: el link recibe pedidos.</p>
+          @if (!confirmEnd()) {
+            <button type="button" class="btn btn--outline" (click)="confirmEnd.set(true)">Finalizar Live</button>
+          } @else {
+            <p class="small">
+              Al finalizar, el link sigue aceptando pedidos durante el periodo de gracia
+              (<span class="mono">CHECKOUT_GRACE_HOURS</span>, 24 h por defecto) para quienes no alcanzaron.
+            </p>
+            <div class="row">
+              <button type="button" class="btn btn--outline btn--sm" (click)="confirmEnd.set(false)">Seguir en vivo</button>
+              <button type="button" class="btn btn--primary btn--sm" (click)="setStatus('ENDED')" [disabled]="changingStatus()">Sí, finalizar</button>
+            </div>
+          }
+        }
+        @case ('ENDED') {
+          <p class="strong">Live finalizado.</p>
+          <p class="small muted">El link acepta pedidos rezagados durante el periodo de gracia y luego se cierra.</p>
+          <button type="button" class="btn btn--outline" (click)="setStatus('LIVE')" [disabled]="changingStatus()">Volver a poner EN VIVO</button>
+        }
+      }
+    </section>
+
+    <!-- Link -->
+    <section class="card ld-link">
+      <p class="small muted">Link de compra para compartir en TikTok</p>
+      <p class="ld-link__url mono">{{ url(l.slug) }}</p>
+      <div class="row">
+        <button type="button" class="btn btn--primary btn--sm" (click)="copy(l.slug)">🔗 Copiar link</button>
+        <a class="btn btn--outline btn--sm" [href]="url(l.slug)" target="_blank" rel="noopener">Ver como cliente</a>
+      </div>
+    </section>
+
+    <!-- Ajustes -->
+    <form class="card ld-settings" (submit)="$event.preventDefault(); saveSettings()">
+      <label class="field">
+        <span class="field__label">Título</span>
+        <input class="input" [value]="editTitle()" (input)="editTitle.set($any($event.target).value)" maxlength="120" />
+      </label>
+      <label class="field">
+        <span class="field__label">Minutos para pagar</span>
+        <input class="input" type="number" min="5" max="1440" [value]="editMinutes()" (input)="editMinutes.set($any($event.target).valueAsNumber || 30)" />
+      </label>
+      <button type="submit" class="btn btn--ghost btn--sm" [disabled]="!settingsDirty()">Guardar ajustes</button>
+    </form>
+  </div>
+
+  <!-- Productos -->
+  <div class="adm-head ld-items-head">
+    <h2>Productos del Live <span class="muted">({{ l.items.length }})</span></h2>
+    <button type="button" class="btn btn--primary btn--sm" (click)="openPicker()">+ Agregar productos</button>
+  </div>
+  <p class="small muted ld-hint">
+    Deja el <strong>precio Live</strong> vacío para usar el precio normal. Los cambios se guardan al salir de cada campo.
+  </p>
+
+  @if (l.items.length === 0) {
+    <div class="adm-empty">Este Live aún no tiene productos. Agrégalos para que aparezcan en el link.</div>
+  } @else {
+    <div class="adm-table-wrap">
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th>Orden</th>
+            <th>Producto</th>
+            <th class="num">Disponible</th>
+            <th class="num">Precio normal</th>
+            <th>Precio Live</th>
+            <th>Máx. por pedido</th>
+            <th>Visible</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of l.items; track item.variantId; let i = $index, isFirst = $first, isLast = $last) {
+            <tr [class.ld-row--saving]="savingRow() === item.variantId" [class.ld-row--hidden]="!item.active">
+              <td>
+                <div class="ld-order">
+                  <button type="button" (click)="move(i, -1)" [disabled]="isFirst || !!savingRow()" aria-label="Subir">▲</button>
+                  <button type="button" (click)="move(i, 1)" [disabled]="isLast || !!savingRow()" aria-label="Bajar">▼</button>
+                </div>
+              </td>
+              <td>
+                <div class="strong">{{ item.variant.name }}</div>
+                <div class="small muted">{{ item.variant.product.name }} · <span class="mono">{{ item.variant.sku }}</span></div>
+                @if (!item.variant.active || !item.variant.product.active) {
+                  <span class="badge badge--danger">Inactivo en catálogo</span>
+                }
+              </td>
+              <td class="num">
+                <span class="badge" [class]="'badge ' + (available(item) === 0 ? 'badge--danger' : available(item) <= 3 ? 'badge--warn' : 'badge--success')">{{ available(item) }}</span>
+              </td>
+              <td class="num">{{ item.variant.priceCop | cop }}</td>
+              <td>
+                <div class="ld-price">
+                  <span class="muted">$</span>
+                  <input
+                    class="input"
+                    inputmode="numeric"
+                    [value]="item.livePriceCop ?? ''"
+                    placeholder="Normal"
+                    (change)="setPrice(item, $any($event.target).value)"
+                    [attr.aria-label]="'Precio Live de ' + item.variant.name"
+                  />
+                  @if (discount(item); as d) {
+                    <span class="badge badge--soft">−{{ d }}%</span>
+                  }
+                </div>
+              </td>
+              <td>
+                <input
+                  class="input ld-max"
+                  type="number"
+                  min="1"
+                  max="50"
+                  [value]="item.maxPerOrder"
+                  (change)="setMax(item, $any($event.target).valueAsNumber)"
+                  [attr.aria-label]="'Máximo por pedido de ' + item.variant.name"
+                />
+              </td>
+              <td>
+                <label class="ld-switch">
+                  <input type="checkbox" [checked]="item.active" (change)="toggleActive(item)" [attr.aria-label]="'Visible en el Live: ' + item.variant.name" />
+                  <span></span>
+                </label>
+              </td>
+              <td class="num">
+                <button type="button" class="btn btn--outline btn--sm" (click)="remove(item)" [disabled]="!!savingRow()">Quitar</button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <dialog class="adm-dialog ld-picker" #pickerDialog>
+    <div class="adm-dialog__body">
+      <h2>Agregar productos al Live</h2>
+      <input class="input" type="search" placeholder="Buscar por producto, tono o SKU" [value]="pickerSearch()" (input)="pickerSearch.set($any($event.target).value)" />
+      <div class="ld-picker__list">
+        @if (!catalog()) {
+          <div class="skeleton" style="height: 160px"></div>
+        } @else {
+          @for (p of pickerProducts(); track p.id) {
+            <div class="ld-picker__product">
+              <div class="row">
+                <span class="strong">{{ p.name }}</span>
+                @if (p.brand) {
+                  <span class="small muted">{{ p.brand }}</span>
+                }
+                <span class="spacer"></span>
+                <button type="button" class="adm-chip" (click)="pickAll(p)">Todos</button>
+              </div>
+              @for (v of p.variants; track v.id) {
+                <label class="check ld-picker__variant">
+                  <input type="checkbox" [checked]="picked().has(v.id)" (change)="togglePick(v.id)" />
+                  <span>{{ v.name }} <span class="mono muted">{{ v.sku }}</span></span>
+                  <span class="spacer"></span>
+                  <span class="small">{{ v.priceCop | cop }}</span>
+                  <span class="small muted">· {{ (v.inventory?.onHand ?? 0) - (v.inventory?.reserved ?? 0) }} disp.</span>
+                </label>
+              }
+            </div>
+          } @empty {
+            <p class="muted small">No hay más productos para agregar. Crea productos nuevos en <a routerLink="/admin/productos" (click)="closePicker()">Productos</a>.</p>
+          }
+        }
+      </div>
+      <div class="adm-dialog__actions">
+        <button type="button" class="btn btn--outline" (click)="closePicker()">Cancelar</button>
+        <button type="button" class="btn btn--primary" (click)="addPicked()" [disabled]="picked().size === 0 || adding()">
+          @if (adding()) {
+            <span class="spinner"></span>
+          }
+          Agregar ({{ picked().size }})
+        </button>
+      </div>
+    </div>
+  </dialog>
+} @else {
+  <div class="skeleton" style="height: 300px"></div>
+}
